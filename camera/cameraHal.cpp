@@ -328,9 +328,6 @@ static void CameraHAL_FixupParams(CameraParameters &settings)
     settings.set(CameraParameters::KEY_PREVIEW_FPS_RANGE, "5000,30000");
     settings.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV422I);
     settings.set(CameraParameters::KEY_PREFERRED_PREVIEW_SIZE_FOR_VIDEO, "848x480");
-    settings.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FORMATS, CameraParameters::PIXEL_FORMAT_YUV422I);
-    settings.setPreviewFormat(CameraParameters::PIXEL_FORMAT_YUV422I);
-
     LOGD("Parameters fixed up");
 #endif
 }
