@@ -459,7 +459,7 @@ static void camera_enable_msg_type(struct camera_device * device, int32_t msg_ty
 static void camera_disable_msg_type(struct camera_device * device, int32_t msg_type) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
     LOGV("%s: msgType:%d\n", __FUNCTION__, msg_type);
-    if (msgType == CAMERA_MSG_VIDEO_FRAME) {
+    if (msg_type == CAMERA_MSG_VIDEO_FRAME) {
         LOGV("%s: releasing stale video frames", __FUNCTION__);
         releaseCameraFrames(lcdev);
     }
