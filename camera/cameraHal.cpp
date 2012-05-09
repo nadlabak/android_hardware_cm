@@ -328,6 +328,14 @@ static void CameraHAL_FixupParams(CameraParameters &settings)
     settings.set(CameraParameters::KEY_PREVIEW_FPS_RANGE, "5000,30000");
     settings.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV422I);
     settings.set(CameraParameters::KEY_PREFERRED_PREVIEW_SIZE_FOR_VIDEO, "848x480");
+
+/*  empty KEY_SUPPORTED_VIDEO_SIZES indicates that the video resolution
+    should be set via the preview resolution.
+    Milestone's camera:
+    video-size-values: 176x144,320x240,352x288,640x480,720x480,720x576,1280x720
+    preview-size-values: 176x144,320x240,352x288,640x480,720x480,720x576,848x480
+    So let's return an empty list to allow the 848x480 video recording. */
+    settings.set(CameraParameters::KEY_SUPPORTED_VIDEO_SIZES, "");
     LOGD("Parameters fixed up");
 #endif
 }
