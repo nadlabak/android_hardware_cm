@@ -52,6 +52,10 @@ extern "C" void HAL_getCameraInfo(int cameraId, struct CameraInfo* cameraInfo);
 
 namespace android {
 
+#ifdef HALVE_PREVIEW_FPS
+static bool skipThisPreviewFrame = false;
+#endif
+
 struct legacy_camera_device {
     camera_device_t device;
     int id;
@@ -185,10 +189,6 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
         return;
     }
 
-    if ( stride != lcdev->previewWidth) {
-        LOGV("%s: stride=%d doesn't equal width=%d", __FUNCTION__, stride, lcdev->previewWidth);
-    }
-
     ret = lcdev->window->lock_buffer(lcdev->window, bufHandle);
     if (ret != NO_ERROR) {
         LOGE("%s: ERROR locking the buffer", __FUNCTION__);
@@ -235,11 +235,20 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
 }
 
 static void overlayQueueBuffer(void *data, void *buffer, size_t size) {
-    if (data != NULL && buffer != NULL) {
-        legacy_camera_device *lcdev = (legacy_camera_device *) data;
-        Overlay::Format format = (Overlay::Format) lcdev->overlay->getFormat();
-        processPreviewData((char*)buffer, size, lcdev, format);
+#ifdef HALVE_PREVIEW_FPS
+    if (!skipThisPreviewFrame) {
+        skipThisPreviewFrame = true;
+#endif
+        if (data != NULL && buffer != NULL) {
+            legacy_camera_device *lcdev = (legacy_camera_device *) data;
+            Overlay::Format format = (Overlay::Format) lcdev->overlay->getFormat();
+            processPreviewData((char*)buffer, size, lcdev, format);
+       }
+#ifdef HALVE_PREVIEW_FPS
+    } else {
+        skipThisPreviewFrame = false;
     }
+#endif
 }
 
 static camera_memory_t* genClientData(legacy_camera_device *lcdev, const sp<IMemory> &dataPtr) {
@@ -248,7 +257,7 @@ static camera_memory_t* genClientData(legacy_camera_device *lcdev, const sp<IMem
     camera_memory_t *clientData = NULL;
     sp<IMemoryHeap> mHeap = dataPtr->getMemory(&offset, &size);
 
-    LOGV("%s: offset:%#x size:%#x base:%p",
+    LOGV("%s: offset:%#x size:%#x base:%p", __FUNCTION__,
             (unsigned)offset, size, mHeap != NULL ? mHeap->base() : 0);
 
     clientData = lcdev->request_memory(-1, size, 1, lcdev->user);
@@ -292,7 +301,7 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
     struct legacy_camera_device *lcdev = (struct legacy_camera_device *) user;
 
     LOGV("%s: timestamp:%lld msg_type:%d user:%p",
-            __FUNCTION__, timestamp /1000, msg_type, user);
+            __FUNCTION__, timestamp /1000, msgType, user);
 
     if (lcdev->data_timestamp_callback != NULL && lcdev->request_memory != NULL) {
         camera_memory_t *mem = genClientData(lcdev, dataPtr);
