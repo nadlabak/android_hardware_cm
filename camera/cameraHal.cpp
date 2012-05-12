@@ -56,6 +56,7 @@ namespace android {
 static bool skipThisPreviewFrame = false;
 #endif
 static int numAllocFrames = 0;
+const int FRAME_ALLOC_THRESHOLD = 10;
 
 struct legacy_camera_device {
     camera_device_t device;
@@ -303,13 +304,16 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
 
     LOGV("%s: timestamp:%lld msg_type:%d user:%p",
             __FUNCTION__, timestamp /1000, msgType, user);
-
+    if (numAllocFrames > FRAME_ALLOC_THRESHOLD) {
+        LOGW("Number of allocated frames %d is over the threshold %d! Frame dropped!",
+                numAllocFrames, FRAME_ALLOC_THRESHOLD);
+        lcdev->hwif->releaseRecordingFrame(dataPtr);
+        return;
+    }
     if (lcdev->data_timestamp_callback != NULL && lcdev->request_memory != NULL) {
         camera_memory_t *mem = genClientData(lcdev, dataPtr);
         if (mem != NULL) {
-            if (numAllocFrames++ > 3) {
-                LOGW("The number of unreleased frames reached %d!", numAllocFrames);
-            }
+            numAllocFrames++;
             LOGV("%s: Posting data to client timestamp:%lld, alloc frames:%d", __FUNCTION__, systemTime(), numAllocFrames);
             lcdev->sentFrames.push_back(mem);
             lcdev->data_timestamp_callback(timestamp, msgType, mem, /*index*/0, lcdev->user);
