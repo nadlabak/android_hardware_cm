@@ -55,6 +55,7 @@ namespace android {
 #ifdef HALVE_PREVIEW_FPS
 static bool skipThisPreviewFrame = false;
 #endif
+static int numAllocFrames = 0;
 
 struct legacy_camera_device {
     camera_device_t device;
@@ -306,7 +307,10 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
     if (lcdev->data_timestamp_callback != NULL && lcdev->request_memory != NULL) {
         camera_memory_t *mem = genClientData(lcdev, dataPtr);
         if (mem != NULL) {
-            LOGV("%s: Posting data to client timestamp:%lld", __FUNCTION__, systemTime());
+            if (numAllocFrames++ > 3) {
+                LOGW("The number of unreleased frames reached %d!", numAllocFrames);
+            }
+            LOGV("%s: Posting data to client timestamp:%lld, alloc frames:%d", __FUNCTION__, systemTime(), numAllocFrames);
             lcdev->sentFrames.push_back(mem);
             lcdev->data_timestamp_callback(timestamp, msgType, mem, /*index*/0, lcdev->user);
             lcdev->hwif->releaseRecordingFrame(dataPtr);
@@ -513,6 +517,7 @@ static int camera_store_meta_data_in_buffers(struct camera_device * device, int 
 
 static int camera_start_recording(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
+    numAllocFrames = 0;
     LOGV("%s:\n", __FUNCTION__);
     lcdev->hwif->startRecording();
     return NO_ERROR;
@@ -541,6 +546,7 @@ static void camera_release_recording_frame(struct camera_device * device, const 
                 LOGV("%s: found, removing", __FUNCTION__);
                 mem->release(mem);
                 lcdev->sentFrames.erase(it);
+                numAllocFrames--;
                 break;
             }
         }
