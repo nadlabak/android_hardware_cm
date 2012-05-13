@@ -52,11 +52,28 @@ extern "C" void HAL_getCameraInfo(int cameraId, struct CameraInfo* cameraInfo);
 
 namespace android {
 
-#ifdef HALVE_PREVIEW_FPS
-static bool skipThisPreviewFrame = false;
-#endif
-static int numAllocFrames = 0;
-const int FRAME_ALLOC_THRESHOLD = 10;
+static long long mLastPreviewTime = 0;
+static bool mThrottlePreview = false;
+static bool mPreviousVideoFrameDropped = false;
+static int mNumAllocFrames = 0;
+
+/* When the media encoder is not working fast enough,
+   the number of allocated but yet unreleased frames
+   in memory could start to grow without limit.
+
+   Three thresholds are used to deal with such condition.
+   First, if the number of frames gets over the PREVIEW_THROTTLE_THRESHOLD,
+   just limit the preview framerate to relieve the CPU to help the encoder
+   to catch up.
+   If it is not enough and the number gets also over the SOFT_DROP_THRESHOLD,
+   start dropping new frames coming from camera, but only one at a time,
+   never two consecutive ones.
+   If the number gets even over the HARD_DROP_THRESHOLD, drop the frames
+   without further conditions. */
+
+const int PREVIEW_THROTTLE_THRESHOLD = 8;
+const int SOFT_DROP_THRESHOLD = 14;
+const int HARD_DROP_THRESHOLD = 18;
 
 struct legacy_camera_device {
     camera_device_t device;
@@ -237,20 +254,15 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
 }
 
 static void overlayQueueBuffer(void *data, void *buffer, size_t size) {
-#ifdef HALVE_PREVIEW_FPS
-    if (!skipThisPreviewFrame) {
-        skipThisPreviewFrame = true;
-#endif
+    long long now = systemTime();
+    if ((now - mLastPreviewTime) > (mThrottlePreview ? 200000000 : 60000000)) {
+        mLastPreviewTime = now;
         if (data != NULL && buffer != NULL) {
             legacy_camera_device *lcdev = (legacy_camera_device *) data;
             Overlay::Format format = (Overlay::Format) lcdev->overlay->getFormat();
             processPreviewData((char*)buffer, size, lcdev, format);
-       }
-#ifdef HALVE_PREVIEW_FPS
-    } else {
-        skipThisPreviewFrame = false;
+        }
     }
-#endif
 }
 
 static camera_memory_t* genClientData(legacy_camera_device *lcdev, const sp<IMemory> &dataPtr) {
@@ -304,17 +316,28 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
 
     LOGV("%s: timestamp:%lld msg_type:%d user:%p",
             __FUNCTION__, timestamp /1000, msgType, user);
-    if (numAllocFrames > FRAME_ALLOC_THRESHOLD) {
-        LOGW("Number of allocated frames %d is over the threshold %d! Frame dropped!",
-                numAllocFrames, FRAME_ALLOC_THRESHOLD);
-        lcdev->hwif->releaseRecordingFrame(dataPtr);
-        return;
+    if (mNumAllocFrames > PREVIEW_THROTTLE_THRESHOLD) {
+        mThrottlePreview = true;
+        LOGV("%s: preview throttled (fr. queued/throttle thres.: %d/%d)",
+                    __FUNCTION__, mNumAllocFrames, PREVIEW_THROTTLE_THRESHOLD);
+        if ((!mPreviousVideoFrameDropped && mNumAllocFrames > SOFT_DROP_THRESHOLD)
+                || mNumAllocFrames > HARD_DROP_THRESHOLD) {
+            LOGW("Frame has to be dropped! (fr. queued/soft thres./hard thres.: %d/%d/%d)",
+                    mNumAllocFrames, SOFT_DROP_THRESHOLD, HARD_DROP_THRESHOLD);
+            mPreviousVideoFrameDropped = true;
+            lcdev->hwif->releaseRecordingFrame(dataPtr);
+            return;
+        }
+    } else {
+        mThrottlePreview = false;
     }
+
     if (lcdev->data_timestamp_callback != NULL && lcdev->request_memory != NULL) {
         camera_memory_t *mem = genClientData(lcdev, dataPtr);
         if (mem != NULL) {
-            numAllocFrames++;
-            LOGV("%s: Posting data to client timestamp:%lld, alloc frames:%d", __FUNCTION__, systemTime(), numAllocFrames);
+            mNumAllocFrames++;
+            mPreviousVideoFrameDropped = false;
+            LOGV("%s: Posting data to client timestamp:%lld, alloc frames:%d", __FUNCTION__, systemTime(), mNumAllocFrames);
             lcdev->sentFrames.push_back(mem);
             lcdev->data_timestamp_callback(timestamp, msgType, mem, /*index*/0, lcdev->user);
             lcdev->hwif->releaseRecordingFrame(dataPtr);
@@ -367,8 +390,11 @@ inline void destroyOverlay(legacy_camera_device *lcdev) {
 static void releaseCameraFrames(legacy_camera_device *lcdev)
 {
     vector<camera_memory_t*>::iterator it;
-    for (it = lcdev->sentFrames.begin(); it != lcdev->sentFrames.end(); ++it) {
-        (*it)->release(*it);
+    for (it = lcdev->sentFrames.begin(); it < lcdev->sentFrames.end(); ++it) {
+        camera_memory_t *mem = *it;
+        LOGV("%s: releasing mem->data:%p", __FUNCTION__, mem->data);
+        mem->release(mem);
+        lcdev->sentFrames.erase(it);
     }
     lcdev->sentFrames.clear();
 }
@@ -521,15 +547,18 @@ static int camera_store_meta_data_in_buffers(struct camera_device * device, int 
 
 static int camera_start_recording(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    numAllocFrames = 0;
-    LOGV("%s:\n", __FUNCTION__);
+    mNumAllocFrames = 0;
+    mPreviousVideoFrameDropped = false;
+    mThrottlePreview = false;
+    LOGV("%s:", __FUNCTION__);
     lcdev->hwif->startRecording();
     return NO_ERROR;
 }
 
 static void camera_stop_recording(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    LOGV("%s:", __FUNCTION__);
+    mThrottlePreview = false;
     lcdev->hwif->stopRecording();
 }
 
@@ -550,7 +579,7 @@ static void camera_release_recording_frame(struct camera_device * device, const 
                 LOGV("%s: found, removing", __FUNCTION__);
                 mem->release(mem);
                 lcdev->sentFrames.erase(it);
-                numAllocFrames--;
+                mNumAllocFrames--;
                 break;
             }
         }
