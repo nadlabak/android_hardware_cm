@@ -75,6 +75,12 @@ const int PREVIEW_THROTTLE_THRESHOLD = 8;
 const int SOFT_DROP_THRESHOLD = 14;
 const int HARD_DROP_THRESHOLD = 18;
 
+/* The following values (in nsecs) are used to limit the preview framerate
+   to reduce the CPU usage. */
+
+const int MIN_PREVIEW_FRAME_INTERVAL = 80000000;
+const int MIN_PREVIEW_FRAME_INTERVAL_THROTTLED = 200000000;
+
 struct legacy_camera_device {
     camera_device_t device;
     int id;
@@ -255,7 +261,8 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
 
 static void overlayQueueBuffer(void *data, void *buffer, size_t size) {
     long long now = systemTime();
-    if ((now - mLastPreviewTime) > (mThrottlePreview ? 200000000 : 60000000)) {
+    if ((now - mLastPreviewTime) > (mThrottlePreview ?
+            MIN_PREVIEW_FRAME_INTERVAL_THROTTLED : MIN_PREVIEW_FRAME_INTERVAL)) {
         mLastPreviewTime = now;
         if (data != NULL && buffer != NULL) {
             legacy_camera_device *lcdev = (legacy_camera_device *) data;
