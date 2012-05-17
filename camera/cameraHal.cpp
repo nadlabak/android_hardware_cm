@@ -55,7 +55,7 @@ namespace android {
 static long long mLastPreviewTime = 0;
 static bool mThrottlePreview = false;
 static bool mPreviousVideoFrameDropped = false;
-static int mNumAllocFrames = 0;
+static int mNumVideoFramesDropped = 0;
 
 /* When the media encoder is not working fast enough,
    the number of allocated but yet unreleased frames
@@ -71,9 +71,9 @@ static int mNumAllocFrames = 0;
    If the number gets even over the HARD_DROP_THRESHOLD, drop the frames
    without further conditions. */
 
-const int PREVIEW_THROTTLE_THRESHOLD = 8;
-const int SOFT_DROP_THRESHOLD = 14;
-const int HARD_DROP_THRESHOLD = 18;
+const unsigned int PREVIEW_THROTTLE_THRESHOLD = 6;
+const unsigned int SOFT_DROP_THRESHOLD = 12;
+const unsigned int HARD_DROP_THRESHOLD = 15;
 
 /* The following values (in nsecs) are used to limit the preview framerate
    to reduce the CPU usage. */
@@ -323,15 +323,17 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
 
     LOGV("%s: timestamp:%lld msg_type:%d user:%p",
             __FUNCTION__, timestamp /1000, msgType, user);
-    if (mNumAllocFrames > PREVIEW_THROTTLE_THRESHOLD) {
+    int framesSent = lcdev->sentFrames.size();
+    if (framesSent > PREVIEW_THROTTLE_THRESHOLD) {
         mThrottlePreview = true;
         LOGV("%s: preview throttled (fr. queued/throttle thres.: %d/%d)",
-                    __FUNCTION__, mNumAllocFrames, PREVIEW_THROTTLE_THRESHOLD);
-        if ((!mPreviousVideoFrameDropped && mNumAllocFrames > SOFT_DROP_THRESHOLD)
-                || mNumAllocFrames > HARD_DROP_THRESHOLD) {
-            LOGW("Frame has to be dropped! (fr. queued/soft thres./hard thres.: %d/%d/%d)",
-                    mNumAllocFrames, SOFT_DROP_THRESHOLD, HARD_DROP_THRESHOLD);
+                    __FUNCTION__, framesSent, PREVIEW_THROTTLE_THRESHOLD);
+        if ((!mPreviousVideoFrameDropped && framesSent > SOFT_DROP_THRESHOLD)
+                || framesSent > HARD_DROP_THRESHOLD) {
+            LOGV("Frame has to be dropped! (fr. queued/soft thres./hard thres.: %d/%d/%d)",
+                    framesSent, SOFT_DROP_THRESHOLD, HARD_DROP_THRESHOLD);
             mPreviousVideoFrameDropped = true;
+            mNumVideoFramesDropped++;
             lcdev->hwif->releaseRecordingFrame(dataPtr);
             return;
         }
@@ -342,9 +344,8 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
     if (lcdev->data_timestamp_callback != NULL && lcdev->request_memory != NULL) {
         camera_memory_t *mem = genClientData(lcdev, dataPtr);
         if (mem != NULL) {
-            mNumAllocFrames++;
             mPreviousVideoFrameDropped = false;
-            LOGV("%s: Posting data to client timestamp:%lld, alloc frames:%d", __FUNCTION__, systemTime(), mNumAllocFrames);
+            LOGV("%s: Posting data to client timestamp:%lld", __FUNCTION__, systemTime());
             lcdev->sentFrames.push_back(mem);
             lcdev->data_timestamp_callback(timestamp, msgType, mem, /*index*/0, lcdev->user);
             lcdev->hwif->releaseRecordingFrame(dataPtr);
@@ -370,9 +371,7 @@ static void notifyCallback(int32_t msgType, int32_t ext1, int32_t ext2, void *us
 static void CameraHAL_FixupParams(CameraParameters &settings)
 {
 #ifdef MOTOROLA_CAMERA
-    // Milestone2 camera doesn't support YUV420sp... it advertises so, but then sends YUV422I-yuyv data
-    settings.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FPS_RANGE, "(5000,30000),(5000,25000),(5000,20000),(5000,24000),(5000,15000),(5000,10000)");
-    settings.set(CameraParameters::KEY_PREVIEW_FPS_RANGE, "5000,30000");
+    // Milestone2 camera doesn't support YUV420sp video... it advertises so, but then sends YUV422I-yuyv data
     settings.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV422I);
     settings.set(CameraParameters::KEY_PREFERRED_PREVIEW_SIZE_FOR_VIDEO, "848x480");
 
@@ -401,7 +400,6 @@ static void releaseCameraFrames(legacy_camera_device *lcdev)
         camera_memory_t *mem = *it;
         LOGV("%s: releasing mem->data:%p", __FUNCTION__, mem->data);
         mem->release(mem);
-        lcdev->sentFrames.erase(it);
     }
     lcdev->sentFrames.clear();
 }
@@ -514,11 +512,11 @@ static void camera_enable_msg_type(struct camera_device * device, int32_t msg_ty
 static void camera_disable_msg_type(struct camera_device * device, int32_t msg_type) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
     LOGV("%s: msgType:%d\n", __FUNCTION__, msg_type);
-    lcdev->hwif->disableMsgType(msg_type);
     if (msg_type == CAMERA_MSG_VIDEO_FRAME) {
         LOGV("%s: releasing stale video frames", __FUNCTION__);
         releaseCameraFrames(lcdev);
     }
+    lcdev->hwif->disableMsgType(msg_type);
 }
 
 static int camera_msg_type_enabled(struct camera_device * device, int32_t msg_type) {
@@ -554,7 +552,7 @@ static int camera_store_meta_data_in_buffers(struct camera_device * device, int 
 
 static int camera_start_recording(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    mNumAllocFrames = 0;
+    mNumVideoFramesDropped = 0;
     mPreviousVideoFrameDropped = false;
     mThrottlePreview = false;
     LOGV("%s:", __FUNCTION__);
@@ -564,7 +562,7 @@ static int camera_start_recording(struct camera_device * device) {
 
 static void camera_stop_recording(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:", __FUNCTION__);
+    LOGI("%s: Number of frames dropped by CameraHAL: %d", __FUNCTION__, mNumVideoFramesDropped);
     mThrottlePreview = false;
     lcdev->hwif->stopRecording();
 }
@@ -586,7 +584,6 @@ static void camera_release_recording_frame(struct camera_device * device, const 
                 LOGV("%s: found, removing", __FUNCTION__);
                 mem->release(mem);
                 lcdev->sentFrames.erase(it);
-                mNumAllocFrames--;
                 break;
             }
         }
