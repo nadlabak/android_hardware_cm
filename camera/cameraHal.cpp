@@ -33,6 +33,7 @@
 //#define LOG_NDEBUG 0
 
 #include "CameraHardwareInterface.h"
+#include <fcntl.h>
 #include <hardware/camera.h>
 #include <binder/IMemory.h>
 #include <hardware/gralloc.h>
@@ -272,6 +273,15 @@ static void overlayQueueBuffer(void *data, void *buffer, size_t size) {
     }
 }
 
+static void flashRedLed(bool enable) {
+    int fd = ::open("/sys/class/leds/red/brightness", O_WRONLY);
+    if (fd >= 0) {
+        const char *value = enable ? "255" : "0";
+        write(fd, value, strlen(value));
+        close(fd);
+    }
+}
+
 static camera_memory_t* genClientData(legacy_camera_device *lcdev, const sp<IMemory> &dataPtr) {
     ssize_t          offset;
     size_t           size;
@@ -330,6 +340,7 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
                     __FUNCTION__, framesSent, PREVIEW_THROTTLE_THRESHOLD);
         if ((!mPreviousVideoFrameDropped && framesSent > SOFT_DROP_THRESHOLD)
                 || framesSent > HARD_DROP_THRESHOLD) {
+            flashRedLed(true);
             LOGV("Frame has to be dropped! (fr. queued/soft thres./hard thres.: %d/%d/%d)",
                     framesSent, SOFT_DROP_THRESHOLD, HARD_DROP_THRESHOLD);
             mPreviousVideoFrameDropped = true;
@@ -344,11 +355,14 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
     if (lcdev->data_timestamp_callback != NULL && lcdev->request_memory != NULL) {
         camera_memory_t *mem = genClientData(lcdev, dataPtr);
         if (mem != NULL) {
-            mPreviousVideoFrameDropped = false;
             LOGV("%s: Posting data to client timestamp:%lld", __FUNCTION__, systemTime());
             lcdev->sentFrames.push_back(mem);
             lcdev->data_timestamp_callback(timestamp, msgType, mem, /*index*/0, lcdev->user);
             lcdev->hwif->releaseRecordingFrame(dataPtr);
+            if (mPreviousVideoFrameDropped) {
+                flashRedLed(false);
+                mPreviousVideoFrameDropped = false;
+            }
         } else {
             LOGV("%s: ERROR allocating memory from client", __FUNCTION__);
         }
@@ -564,6 +578,7 @@ static void camera_stop_recording(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
     LOGI("%s: Number of frames dropped by CameraHAL: %d", __FUNCTION__, mNumVideoFramesDropped);
     mThrottlePreview = false;
+    flashRedLed(false);
     lcdev->hwif->stopRecording();
 }
 
