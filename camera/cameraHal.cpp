@@ -29,7 +29,7 @@
  * 2012/02/19 - Generic cleanup and overlay support (for Milestone 2)
  */
 
-#define LOG_TAG "CameraHAL"
+#define ALOG_TAG "CameraHAL"
 //#define LOG_NDEBUG 0
 
 #include "CameraHardwareInterface.h"
@@ -112,7 +112,7 @@ static inline struct legacy_camera_device * to_lcdev(struct camera_device *dev) 
 }
 
 static inline void log_camera_params(const char* name, const CameraParameters params) {
-    LOGV("%s: dumping camera params", name);
+    ALOGV("%s: dumping camera params", name);
     params.dump();
 }
 
@@ -241,8 +241,8 @@ static void Yuv422iToYV12 (unsigned char* dest, unsigned char* src, int width, i
 
 static void processPreviewData(char *frame, size_t size, legacy_camera_device *lcdev, Overlay::Format format) {
 #ifdef LOG_EACH_FRAME
-    LOGV("%s: frame=%p, size=%d, camera=%p", __FUNCTION__, frame, size, lcdev);
-    LOGV("%s: width=%d, height=%d, stride=%d, format=%x", __FUNCTION__, lcdev->previewWidth, lcdev->previewHeight, stride, format);
+    ALOGV("%s: frame=%p, size=%d, camera=%p", __FUNCTION__, frame, size, lcdev);
+    ALOGV("%s: width=%d, height=%d, stride=%d, format=%x", __FUNCTION__, lcdev->previewWidth, lcdev->previewHeight, stride, format);
 #endif
     if (lcdev->window == NULL) {
         return;
@@ -252,13 +252,13 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
     buffer_handle_t *bufHandle = NULL;
     int ret = lcdev->window->dequeue_buffer(lcdev->window, &bufHandle, &stride);
     if (ret != NO_ERROR) {
-        LOGE("%s: ERROR dequeueing the buffer", __FUNCTION__);
+        ALOGE("%s: ERROR dequeueing the buffer", __FUNCTION__);
         return;
     }
 
     ret = lcdev->window->lock_buffer(lcdev->window, bufHandle);
     if (ret != NO_ERROR) {
-        LOGE("%s: ERROR locking the buffer", __FUNCTION__);
+        ALOGE("%s: ERROR locking the buffer", __FUNCTION__);
         lcdev->window->cancel_buffer(lcdev->window, bufHandle);
         return;
     }
@@ -271,13 +271,13 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
                 0, 0, lcdev->previewWidth, lcdev->previewHeight, &vaddr);
         tries--;
         if (ret) {
-            LOGW("%s: gralloc lock retry", __FUNCTION__);
+            ALOGW("%s: gralloc lock retry", __FUNCTION__);
             usleep(1000);
         }
     } while (ret && tries > 0);
 
     if (ret) {
-        LOGE("%s: could not lock gralloc buffer", __FUNCTION__);
+        ALOGE("%s: could not lock gralloc buffer", __FUNCTION__);
     } else {
         // The data we get is in YUV... but Window is RGB565. It needs to be converted
         switch (format) {
@@ -288,13 +288,13 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
                 memcpy(vaddr, frame, lcdev->previewWidth * lcdev->previewHeight * 1.5);
                 break;
             default:
-                LOGE("%s: Unknown video format, cannot convert!", __FUNCTION__);
+                ALOGE("%s: Unknown video format, cannot convert!", __FUNCTION__);
         }
         lcdev->gralloc->unlock(lcdev->gralloc, *bufHandle);
     }
 
     if (lcdev->window->enqueue_buffer(lcdev->window, bufHandle) != 0) {
-        LOGE("%s: could not enqueue gralloc buffer", __FUNCTION__);
+        ALOGE("%s: could not enqueue gralloc buffer", __FUNCTION__);
     }
 }
 
@@ -326,15 +326,15 @@ static camera_memory_t* genClientData(legacy_camera_device *lcdev, const sp<IMem
     camera_memory_t *clientData = NULL;
     sp<IMemoryHeap> mHeap = dataPtr->getMemory(&offset, &size);
 
-    LOGV("%s: offset:%#x size:%#x base:%p", __FUNCTION__,
+    ALOGV("%s: offset:%#x size:%#x base:%p", __FUNCTION__,
             (unsigned)offset, size, mHeap != NULL ? mHeap->base() : 0);
 
     clientData = lcdev->request_memory(-1, size, 1, lcdev->user);
     if (clientData != NULL) {
-        LOGV("%s: clientData=%p clientData->data=%p", __FUNCTION__, clientData, clientData->data);
+        ALOGV("%s: clientData=%p clientData->data=%p", __FUNCTION__, clientData, clientData->data);
         memcpy(clientData->data, (char *)(mHeap->base()) + offset, size);
     } else {
-        LOGV("%s: ERROR allocating memory from client", __FUNCTION__);
+        ALOGV("%s: ERROR allocating memory from client", __FUNCTION__);
     }
     return clientData;
 }
@@ -342,7 +342,7 @@ static camera_memory_t* genClientData(legacy_camera_device *lcdev, const sp<IMem
 static void dataCallback(int32_t msgType, const sp<IMemory>& dataPtr, void *user) {
     struct legacy_camera_device *lcdev = (struct legacy_camera_device *) user;
 
-    LOGV("%s: msgType:%d user:%p", __FUNCTION__, msgType, user);
+    ALOGV("%s: msgType:%d user:%p", __FUNCTION__, msgType, user);
 
     if (lcdev->data_callback != NULL && lcdev->request_memory != NULL) {
         if (lcdev->clientData != NULL) {
@@ -350,7 +350,7 @@ static void dataCallback(int32_t msgType, const sp<IMemory>& dataPtr, void *user
         }
         lcdev->clientData = genClientData(lcdev, dataPtr);
         if (lcdev->clientData != NULL) {
-            LOGV("%s: Posting data to client", __FUNCTION__);
+            ALOGV("%s: Posting data to client", __FUNCTION__);
             lcdev->data_callback(msgType, lcdev->clientData, 0, NULL, lcdev->user);
         }
     }
@@ -361,7 +361,7 @@ static void dataCallback(int32_t msgType, const sp<IMemory>& dataPtr, void *user
         sp<IMemoryHeap> mHeap = dataPtr->getMemory(&offset, &size);
         char* buffer = (char*) mHeap->getBase() + offset;
 
-        LOGV("%s: preview size = %dx%d", __FUNCTION__, lcdev->previewWidth, lcdev->previewHeight);
+        ALOGV("%s: preview size = %dx%d", __FUNCTION__, lcdev->previewWidth, lcdev->previewHeight);
         processPreviewData(buffer, size, lcdev, lcdev->previewFormat);
     }
 }
@@ -369,17 +369,17 @@ static void dataCallback(int32_t msgType, const sp<IMemory>& dataPtr, void *user
 static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<IMemory>& dataPtr, void *user) {
     struct legacy_camera_device *lcdev = (struct legacy_camera_device *) user;
 
-    LOGV("%s: timestamp:%lld msg_type:%d user:%p",
+    ALOGV("%s: timestamp:%lld msg_type:%d user:%p",
             __FUNCTION__, timestamp /1000, msgType, user);
     unsigned int framesSent = lcdev->sentFrames.size();
     if (framesSent > PREVIEW_THROTTLE_THRESHOLD) {
         mThrottlePreview = true;
-        LOGV("%s: preview throttled (fr. queued/throttle thres.: %d/%d)",
+        ALOGV("%s: preview throttled (fr. queued/throttle thres.: %d/%d)",
                     __FUNCTION__, framesSent, PREVIEW_THROTTLE_THRESHOLD);
         if ((!mPreviousVideoFrameDropped && framesSent > SOFT_DROP_THRESHOLD)
                 || framesSent > HARD_DROP_THRESHOLD) {
             flashRedLed(true);
-            LOGV("Frame has to be dropped! (fr. queued/soft thres./hard thres.: %d/%d/%d)",
+            ALOGV("Frame has to be dropped! (fr. queued/soft thres./hard thres.: %d/%d/%d)",
                     framesSent, SOFT_DROP_THRESHOLD, HARD_DROP_THRESHOLD);
             mPreviousVideoFrameDropped = true;
             mNumVideoFramesDropped++;
@@ -393,7 +393,7 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
     if (lcdev->data_timestamp_callback != NULL && lcdev->request_memory != NULL) {
         camera_memory_t *mem = genClientData(lcdev, dataPtr);
         if (mem != NULL) {
-            LOGV("%s: Posting data to client timestamp:%lld", __FUNCTION__, systemTime());
+            ALOGV("%s: Posting data to client timestamp:%lld", __FUNCTION__, systemTime());
             lcdev->sentFrames.push_back(mem);
             lcdev->data_timestamp_callback(timestamp, msgType, mem, /*index*/0, lcdev->user);
             lcdev->hwif->releaseRecordingFrame(dataPtr);
@@ -402,7 +402,7 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
                 mPreviousVideoFrameDropped = false;
             }
         } else {
-            LOGV("%s: ERROR allocating memory from client", __FUNCTION__);
+            ALOGV("%s: ERROR allocating memory from client", __FUNCTION__);
         }
     }
 }
@@ -414,7 +414,7 @@ static void notifyCallback(int32_t msgType, int32_t ext1, int32_t ext2, void *us
         return;
     }
 
-    LOGV("%s: msg_type:%d ext1:%d ext2:%d user:%p", __FUNCTION__, msgType, ext1, ext2, user);
+    ALOGV("%s: msg_type:%d ext1:%d ext2:%d user:%p", __FUNCTION__, msgType, ext1, ext2, user);
     if (lcdev->notify_callback != NULL) {
         lcdev->notify_callback(msgType, ext1, ext2, lcdev->user);
     }
@@ -434,7 +434,7 @@ static void CameraHAL_FixupParams(CameraParameters &settings)
     preview-size-values: 176x144,320x240,352x288,640x480,720x480,720x576,848x480
     So let's return an empty list to allow the 848x480 video recording. */
     settings.set(CameraParameters::KEY_SUPPORTED_VIDEO_SIZES, "");
-    LOGD("Parameters fixed up");
+    ALOGD("Parameters fixed up");
 #endif
 }
 
@@ -450,7 +450,7 @@ static void releaseCameraFrames(legacy_camera_device *lcdev)
     vector<camera_memory_t*>::iterator it;
     for (it = lcdev->sentFrames.begin(); it < lcdev->sentFrames.end(); ++it) {
         camera_memory_t *mem = *it;
-        LOGV("%s: releasing mem->data:%p", __FUNCTION__, mem->data);
+        ALOGV("%s: releasing mem->data:%p", __FUNCTION__, mem->data);
         mem->release(mem);
     }
     lcdev->sentFrames.clear();
@@ -461,51 +461,51 @@ static int camera_set_preview_window(struct camera_device * device, struct previ
     int rv = -EINVAL;
     struct legacy_camera_device *lcdev = to_lcdev(device);
 
-    LOGV("%s: Window:%p", __FUNCTION__, window);
+    ALOGV("%s: Window:%p", __FUNCTION__, window);
     if (device == NULL) {
-        LOGE("%s: Invalid device.", __FUNCTION__);
+        ALOGE("%s: Invalid device.", __FUNCTION__);
         return -EINVAL;
     }
 
     if (lcdev->window == window) {
         // reconfigure the old window, preview size might have changed
-        LOGV("%s: reconfiguring window", __FUNCTION__);
+        ALOGV("%s: reconfiguring window", __FUNCTION__);
         destroyOverlay(lcdev);
     }
 
     lcdev->window = window;
     if (window == NULL) {
         // It means we need to release old window
-        LOGV("%s: releasing previous window", __FUNCTION__);
+        ALOGV("%s: releasing previous window", __FUNCTION__);
         destroyOverlay(lcdev);
         return NO_ERROR;
     }
-    LOGV("%s : OK window is %p", __FUNCTION__, window);
+    ALOGV("%s : OK window is %p", __FUNCTION__, window);
 
     if (!lcdev->gralloc) {
         hw_module_t const* module;
         int err = 0;
         if (hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &module) == 0) {
             lcdev->gralloc = (const gralloc_module_t *)module;
-            LOGD("%s: loaded gralloc, module name=%s; author=%s", __FUNCTION__, module->name, module->author);
+            ALOGD("%s: loaded gralloc, module name=%s; author=%s", __FUNCTION__, module->name, module->author);
         } else {
-            LOGE("%s: Fail on loading gralloc HAL", __FUNCTION__);
+            ALOGE("%s: Fail on loading gralloc HAL", __FUNCTION__);
         }
     }
-    LOGV("%s: OK on loading gralloc HAL", __FUNCTION__);
+    ALOGV("%s: OK on loading gralloc HAL", __FUNCTION__);
 
     int min_bufs = -1;
     if (window->get_min_undequeued_buffer_count(window, &min_bufs)) {
-        LOGE("%s: could not retrieve min undequeued buffer count", __FUNCTION__);
+        ALOGE("%s: could not retrieve min undequeued buffer count", __FUNCTION__);
         return -1;
     }
 
-    LOGV("%s: min bufs:%i", __FUNCTION__, min_bufs);
+    ALOGV("%s: min bufs:%i", __FUNCTION__, min_bufs);
 
     int kBufferCount = min_bufs + 2;
-    LOGV("%s: setting buffer count to %i", __FUNCTION__, kBufferCount);
+    ALOGV("%s: setting buffer count to %i", __FUNCTION__, kBufferCount);
     if (window->set_buffer_count(window, kBufferCount)) {
-        LOGE("%s: could not set buffer count", __FUNCTION__);
+        ALOGE("%s: could not set buffer count", __FUNCTION__);
         return -1;
     }
 
@@ -513,21 +513,21 @@ static int camera_set_preview_window(struct camera_device * device, struct previ
     params.getPreviewSize(&lcdev->previewWidth, &lcdev->previewHeight);
 
     const char *previewFormat = params.getPreviewFormat();
-    LOGD("%s: preview format %s", __FUNCTION__, previewFormat);
+    ALOGD("%s: preview format %s", __FUNCTION__, previewFormat);
     lcdev->previewFormat = Overlay::getFormatFromString(previewFormat);
 
     if (window->set_usage(window, GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_SW_READ_OFTEN)) {
-        LOGE("%s: could not set usage on gralloc buffer", __FUNCTION__);
+        ALOGE("%s: could not set usage on gralloc buffer", __FUNCTION__);
         return -1;
     }
 
     if (window->set_buffers_geometry(window, lcdev->previewWidth, lcdev->previewHeight, HAL_PIXEL_FORMAT_YV12)) {
-        LOGE("%s: could not set buffers geometry", __FUNCTION__);
+        ALOGE("%s: could not set buffers geometry", __FUNCTION__);
         return -1;
     }
 
     if (lcdev->hwif->useOverlay()) {
-        LOGI("%s: Using overlay for device %p", __FUNCTION__, lcdev);
+        ALOGI("%s: Using overlay for device %p", __FUNCTION__, lcdev);
         lcdev->overlay = new Overlay(lcdev->previewWidth, lcdev->previewHeight,
                 Overlay::FORMAT_YUV422I, overlayQueueBuffer, (void*) lcdev);
         lcdev->hwif->setOverlay(lcdev->overlay);
@@ -543,7 +543,7 @@ static void camera_set_callbacks(struct camera_device * device,
                       camera_request_memory get_memory, void *user)
 {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s: notify_cb: %p, data_cb: %p data_cb_timestamp: %p, get_memory: %p, user :%p",
+    ALOGV("%s: notify_cb: %p, data_cb: %p data_cb_timestamp: %p, get_memory: %p, user :%p",
             __FUNCTION__, notify_cb, data_cb, data_cb_timestamp, get_memory, user);
 
     lcdev->notify_callback = notify_cb;
@@ -557,15 +557,15 @@ static void camera_set_callbacks(struct camera_device * device,
 
 static void camera_enable_msg_type(struct camera_device * device, int32_t msg_type) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s: msg_type:%d\n", __FUNCTION__, msg_type);
+    ALOGV("%s: msg_type:%d\n", __FUNCTION__, msg_type);
     lcdev->hwif->enableMsgType(msg_type);
 }
 
 static void camera_disable_msg_type(struct camera_device * device, int32_t msg_type) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s: msgType:%d\n", __FUNCTION__, msg_type);
+    ALOGV("%s: msgType:%d\n", __FUNCTION__, msg_type);
     if (msg_type == CAMERA_MSG_VIDEO_FRAME) {
-        LOGV("%s: releasing stale video frames", __FUNCTION__);
+        ALOGV("%s: releasing stale video frames", __FUNCTION__);
         releaseCameraFrames(lcdev);
     }
     lcdev->hwif->disableMsgType(msg_type);
@@ -573,19 +573,19 @@ static void camera_disable_msg_type(struct camera_device * device, int32_t msg_t
 
 static int camera_msg_type_enabled(struct camera_device * device, int32_t msg_type) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s: msgType:%d\n", __FUNCTION__, msg_type);
+    ALOGV("%s: msgType:%d\n", __FUNCTION__, msg_type);
     return lcdev->hwif->msgTypeEnabled(msg_type);
 }
 
 static int camera_start_preview(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     return lcdev->hwif->startPreview();
 }
 
 static void camera_stop_preview(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     lcdev->hwif->stopPreview();
     return;
 }
@@ -593,12 +593,12 @@ static void camera_stop_preview(struct camera_device * device) {
 static int camera_preview_enabled(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
     int ret = lcdev->hwif->previewEnabled();
-    LOGV("%s: %d\n", __FUNCTION__, ret);
+    ALOGV("%s: %d\n", __FUNCTION__, ret);
     return ret;
 }
 
 static int camera_store_meta_data_in_buffers(struct camera_device * device, int enable) {
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     return INVALID_OPERATION;
 }
 
@@ -607,14 +607,14 @@ static int camera_start_recording(struct camera_device * device) {
     mNumVideoFramesDropped = 0;
     mPreviousVideoFrameDropped = false;
     mThrottlePreview = false;
-    LOGV("%s:", __FUNCTION__);
+    ALOGV("%s:", __FUNCTION__);
     lcdev->hwif->startRecording();
     return NO_ERROR;
 }
 
 static void camera_stop_recording(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGI("%s: Number of frames dropped by CameraHAL: %d", __FUNCTION__, mNumVideoFramesDropped);
+    ALOGI("%s: Number of frames dropped by CameraHAL: %d", __FUNCTION__, mNumVideoFramesDropped);
     mThrottlePreview = false;
     flashRedLed(false);
     lcdev->hwif->stopRecording();
@@ -622,19 +622,19 @@ static void camera_stop_recording(struct camera_device * device) {
 
 static int camera_recording_enabled(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     return lcdev->hwif->recordingEnabled() ? 1 : 0;
 }
 
 static void camera_release_recording_frame(struct camera_device * device, const void *opaque) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s: opaque: %p", __FUNCTION__, opaque);
+    ALOGV("%s: opaque: %p", __FUNCTION__, opaque);
     if (opaque != NULL) {
         vector<camera_memory_t*>::iterator it;
         for (it = lcdev->sentFrames.begin(); it != lcdev->sentFrames.end(); ++it) {
             camera_memory_t *mem = *it;
             if (mem->data == opaque) {
-                LOGV("%s: found, removing", __FUNCTION__);
+                ALOGV("%s: found, removing", __FUNCTION__);
                 mem->release(mem);
                 lcdev->sentFrames.erase(it);
                 break;
@@ -645,28 +645,28 @@ static void camera_release_recording_frame(struct camera_device * device, const 
 
 static int camera_auto_focus(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     lcdev->hwif->autoFocus();
     return NO_ERROR;
 }
 
 static int camera_cancel_auto_focus(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     lcdev->hwif->cancelAutoFocus();
     return NO_ERROR;
 }
 
 static int camera_take_picture(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     lcdev->hwif->takePicture();
     return NO_ERROR;
 }
 
 static int camera_cancel_picture(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     lcdev->hwif->cancelPicture();
     return NO_ERROR;
 }
@@ -698,13 +698,13 @@ static void camera_put_parameters(struct camera_device *device, char *params) {
 
 static int camera_send_command(struct camera_device * device, int32_t cmd, int32_t arg0, int32_t arg1) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s: cmd:%d arg0:%d arg1:%d\n", __FUNCTION__, cmd, arg0, arg1);
+    ALOGV("%s: cmd:%d arg0:%d arg1:%d\n", __FUNCTION__, cmd, arg0, arg1);
     return lcdev->hwif->sendCommand(cmd, arg0, arg1);
 }
 
 static void camera_release(struct camera_device * device) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     destroyOverlay(lcdev);
     releaseCameraFrames(lcdev);
     if (lcdev->clientData != NULL) {
@@ -716,7 +716,7 @@ static void camera_release(struct camera_device * device) {
 
 static int camera_dump(struct camera_device * device, int fd) {
     struct legacy_camera_device *lcdev = to_lcdev(device);
-    LOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s:\n", __FUNCTION__);
     Vector<String16> args;
     return lcdev->hwif->dump(fd, args);
 }
@@ -725,7 +725,7 @@ static int camera_device_close(hw_device_t* device) {
     struct camera_device * hwdev = reinterpret_cast<struct camera_device *>(device);
     struct legacy_camera_device *lcdev = to_lcdev(hwdev);
     int rc = -EINVAL;
-    LOGD("%s:\n", __FUNCTION__);
+    ALOGD("%s:\n", __FUNCTION__);
     if (lcdev != NULL) {
         camera_device_ops_t *camera_ops = lcdev->device.ops;
         if (camera_ops) {
@@ -752,7 +752,7 @@ static int camera_device_open(const hw_module_t* module, const char* name, hw_de
 
     int cameraId = atoi(name);
 
-    LOGD("%s: name:%s device:%p cameraId:%d\n", __FUNCTION__, name, device, cameraId);
+    ALOGD("%s: name:%s device:%p cameraId:%d\n", __FUNCTION__, name, device, cameraId);
 
     lcdev = (struct legacy_camera_device *) calloc(1, sizeof(*lcdev));
     if (lcdev == NULL) {
@@ -814,13 +814,13 @@ static int camera_device_open(const hw_module_t* module, const char* name, hw_de
 
 #ifdef BOARD_USE_FROYO_LIBCAMERA
 static int get_number_of_cameras(void) {
-    LOGV("%s", __FUNCTION__);
+    ALOGV("%s", __FUNCTION__);
     return 1;
 }
 #endif
 
 static int get_camera_info(int camera_id, struct camera_info *info) {
-    LOGV("%s", __FUNCTION__);
+    ALOGV("%s", __FUNCTION__);
     int rv = 0;
 
 #ifdef BOARD_USE_FROYO_LIBCAMERA
@@ -838,7 +838,7 @@ static int get_camera_info(int camera_id, struct camera_info *info) {
 #endif
 #endif //BOARD_USE_FROYO_LIBCAMERA
 
-    LOGD("%s: id:%i faceing:%i orientation: %i", __FUNCTION__, camera_id, info->facing, info->orientation);
+    ALOGD("%s: id:%i faceing:%i orientation: %i", __FUNCTION__, camera_id, info->facing, info->orientation);
 
     return rv;
 }
