@@ -203,6 +203,8 @@ static void Yuv422iToRgb565 (char* rgb, char* yuv422i, int width, int height, in
 static void Yuv422iToYV12 (unsigned char* dest, unsigned char* src, int width, int height, int stride) 
 {
     int i, j;
+    int paddingY = stride - width;
+    int paddingC = paddingY / 2;
     unsigned char *src1;
     unsigned char *udest, *vdest;
 
@@ -214,13 +216,14 @@ static void Yuv422iToYV12 (unsigned char* dest, unsigned char* src, int width, i
             *dest++ = src1[2];
             src1 += 4;
         }
+        dest += paddingY;
     }
 
     /* copy the U and V values */
     src1 = src + width * 2;		/* next line */
 
     vdest = dest;
-    udest = dest + width * height / 4;
+    udest = dest + stride * height / 4;
 
     for (i = 0; i < height; i += 2) {
         for (j = 0; j < width; j += 2) {
@@ -231,6 +234,8 @@ static void Yuv422iToYV12 (unsigned char* dest, unsigned char* src, int width, i
         }
         src = src1;
         src1 += width * 2;
+        udest += paddingC;
+        vdest += paddingC;
     }
 }
 
@@ -366,7 +371,7 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
 
     LOGV("%s: timestamp:%lld msg_type:%d user:%p",
             __FUNCTION__, timestamp /1000, msgType, user);
-    int framesSent = lcdev->sentFrames.size();
+    unsigned int framesSent = lcdev->sentFrames.size();
     if (framesSent > PREVIEW_THROTTLE_THRESHOLD) {
         mThrottlePreview = true;
         LOGV("%s: preview throttled (fr. queued/throttle thres.: %d/%d)",
