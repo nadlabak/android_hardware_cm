@@ -29,7 +29,7 @@
  * 2012/02/19 - Generic cleanup and overlay support (for Milestone 2)
  */
 
-#define ALOG_TAG "CameraHAL"
+#define LOG_TAG "CameraHAL"
 //#define LOG_NDEBUG 0
 
 #include "CameraHardwareInterface.h"
