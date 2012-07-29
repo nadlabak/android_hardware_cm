@@ -79,7 +79,7 @@ const unsigned int HARD_DROP_THRESHOLD = 15;
 /* The following values (in nsecs) are used to limit the preview framerate
    to reduce the CPU usage. */
 
-const int MIN_PREVIEW_FRAME_INTERVAL = 20000000;
+const int MIN_PREVIEW_FRAME_INTERVAL = 80000000;
 const int MIN_PREVIEW_FRAME_INTERVAL_THROTTLED = 200000000;
 
 struct legacy_camera_device {
@@ -448,12 +448,15 @@ inline void destroyOverlay(legacy_camera_device *lcdev) {
 static void releaseCameraFrames(legacy_camera_device *lcdev)
 {
     vector<camera_memory_t*>::iterator it;
+    ALOGW("%s: sentFrames.size %d",  __FUNCTION__, lcdev->sentFrames.size());
     for (it = lcdev->sentFrames.begin(); it < lcdev->sentFrames.end(); ++it) {
         camera_memory_t *mem = *it;
-        ALOGV("%s: releasing mem->data:%p", __FUNCTION__, mem->data);
+        ALOGW("%s: releasing mem->data:%p", __FUNCTION__, mem->data);
         mem->release(mem);
     }
+    ALOGW("%s: before sentFrames.clear()", __FUNCTION__);
     lcdev->sentFrames.clear();
+    ALOGW("%s: after sentFrames.clear()", __FUNCTION__);
 }
 
 /* Hardware Camera interface handlers. */
