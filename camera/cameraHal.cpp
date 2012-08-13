@@ -334,7 +334,7 @@ static camera_memory_t* genClientData(legacy_camera_device *lcdev, const sp<IMem
         ALOGV("%s: clientData=%p clientData->data=%p", __FUNCTION__, clientData, clientData->data);
         memcpy(clientData->data, (char *)(mHeap->base()) + offset, size);
     } else {
-        ALOGV("%s: ERROR allocating memory from client", __FUNCTION__);
+        ALOGE("%s: ERROR allocating memory from client", __FUNCTION__);
     }
     return clientData;
 }
@@ -394,7 +394,9 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
         camera_memory_t *mem = genClientData(lcdev, dataPtr);
         if (mem != NULL) {
             ALOGV("%s: Posting data to client timestamp:%lld", __FUNCTION__, systemTime());
+            Mutex::Autolock lock(mSentFramesLock);
             lcdev->sentFrames.push_back(mem);
+            mSentFramesLock.unlock();
             lcdev->data_timestamp_callback(timestamp, msgType, mem, /*index*/0, lcdev->user);
             lcdev->hwif->releaseRecordingFrame(dataPtr);
             if (mPreviousVideoFrameDropped) {
@@ -402,7 +404,7 @@ static void dataTimestampCallback(nsecs_t timestamp, int32_t msgType, const sp<I
                 mPreviousVideoFrameDropped = false;
             }
         } else {
-            ALOGV("%s: ERROR allocating memory from client", __FUNCTION__);
+            ALOGE("%s: ERROR allocating memory from client", __FUNCTION__);
         }
     }
 }
@@ -448,6 +450,7 @@ inline void destroyOverlay(legacy_camera_device *lcdev) {
 static void releaseCameraFrames(legacy_camera_device *lcdev)
 {
     vector<camera_memory_t*>::iterator it;
+    Mutex::Autolock lock(mSentFramesLock);
     ALOGW("%s: sentFrames.size %d",  __FUNCTION__, lcdev->sentFrames.size());
     for (it = lcdev->sentFrames.begin(); it < lcdev->sentFrames.end(); ++it) {
         camera_memory_t *mem = *it;
@@ -601,7 +604,7 @@ static int camera_preview_enabled(struct camera_device * device) {
 }
 
 static int camera_store_meta_data_in_buffers(struct camera_device * device, int enable) {
-    ALOGV("%s:\n", __FUNCTION__);
+    ALOGV("%s: %d\n", __FUNCTION__, enable);
     return INVALID_OPERATION;
 }
 
@@ -634,6 +637,7 @@ static void camera_release_recording_frame(struct camera_device * device, const 
     ALOGV("%s: opaque: %p", __FUNCTION__, opaque);
     if (opaque != NULL) {
         vector<camera_memory_t*>::iterator it;
+        Mutex::Autolock lock(mSentFramesLock);
         for (it = lcdev->sentFrames.begin(); it != lcdev->sentFrames.end(); ++it) {
             camera_memory_t *mem = *it;
             if (mem->data == opaque) {
