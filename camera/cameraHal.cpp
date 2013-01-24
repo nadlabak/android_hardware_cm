@@ -31,6 +31,7 @@
 
 #define LOG_TAG "CameraHAL"
 //#define LOG_NDEBUG 0
+//#define LOG_FULL_PARAMS
 
 #include "CameraHardwareInterface.h"
 #include <fcntl.h>
@@ -112,8 +113,10 @@ static inline struct legacy_camera_device * to_lcdev(struct camera_device *dev) 
 }
 
 static inline void log_camera_params(const char* name, const CameraParameters params) {
+#ifdef LOG_FULL_PARAMS
     ALOGV("%s: dumping camera params", name);
     params.dump();
+#endif
 }
 
 //
