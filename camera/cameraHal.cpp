@@ -73,15 +73,15 @@ static int mNumVideoFramesDropped = 0;
    If the number gets even over the HARD_DROP_THRESHOLD, drop the frames
    without further conditions. */
 
-const unsigned int PREVIEW_THROTTLE_THRESHOLD = 6;
-const unsigned int SOFT_DROP_THRESHOLD = 12;
-const unsigned int HARD_DROP_THRESHOLD = 15;
+const unsigned int PREVIEW_THROTTLE_THRESHOLD = 5;
+const unsigned int SOFT_DROP_THRESHOLD = 10;
+const unsigned int HARD_DROP_THRESHOLD = 14;
 
 /* The following values (in nsecs) are used to limit the preview framerate
    to reduce the CPU usage. */
 
 const int MIN_PREVIEW_FRAME_INTERVAL = 80000000;
-const int MIN_PREVIEW_FRAME_INTERVAL_THROTTLED = 200000000;
+const int MIN_PREVIEW_FRAME_INTERVAL_THROTTLED = 120000000;
 
 struct legacy_camera_device {
     camera_device_t device;
@@ -202,19 +202,19 @@ static void Yuv422iToRgb565 (char* rgb, char* yuv422i, int width, int height, in
     }
 }
 
-/* from v4l lib */
-static void Yuv422iToYV12 (unsigned char* dest, unsigned char* src, int width, int height, int stride) 
+/* derived from v4l lib */
+static void Yuv422iToYV12 (unsigned char* dest, unsigned char* src, int width, int height, int stride)
 {
-    int i, j;
-    int paddingY = stride - width;
-    int paddingC = paddingY / 2;
-    unsigned char *src1;
+    unsigned int i, j;
+    unsigned int paddingY = stride - width;
+    unsigned int paddingC = paddingY / 2;
+    unsigned int doubleWidth = width * 2;
+    unsigned char *src1 = src;
     unsigned char *udest, *vdest;
 
     /* copy the Y values */
-    src1 = src;
-    for (i = 0; i < height; i++) {
-        for (j = 0; j < width; j += 2) {
+    for (i = height; i != 0; i--) {
+        for (j = width; j != 0; j -= 2) {
             *dest++ = src1[0];
             *dest++ = src1[2];
             src1 += 4;
@@ -223,30 +223,30 @@ static void Yuv422iToYV12 (unsigned char* dest, unsigned char* src, int width, i
     }
 
     /* copy the U and V values */
-    src1 = src + width * 2;		/* next line */
-
     vdest = dest;
-    udest = dest + stride * height / 4;
+    udest = vdest + stride * height / 4;
 
-    for (i = 0; i < height; i += 2) {
-        for (j = 0; j < width; j += 2) {
-            *udest++ = ((int) src[1] + src1[1]) / 2;	/* U */
-            *vdest++ = ((int) src[3] + src1[3]) / 2;	/* V */
+    for (i = height; i != 0; i -= 2) {
+        for (j = width; j != 0; j -= 2) {
+        /*
+           For the conversion from YUV 422 to 420 to be correct,
+           the U and V values should be calculated as an average.
+           But for the preview purpose, we need efficiency more
+           than accuracy. Using just the first of the two values
+           looks good enough and the speed-up of the conversion
+           is significant enough to justify such simplification.
+        */
+            *udest++ = src[1];
+            *vdest++ = src[3];
             src += 4;
-            src1 += 4;
         }
-        src = src1;
-        src1 += width * 2;
+        src += doubleWidth;
         udest += paddingC;
         vdest += paddingC;
     }
 }
 
 static void processPreviewData(char *frame, size_t size, legacy_camera_device *lcdev, Overlay::Format format) {
-#ifdef LOG_EACH_FRAME
-    LOGV("%s: frame=%p, size=%d, camera=%p", __FUNCTION__, frame, size, lcdev);
-    LOGV("%s: width=%d, height=%d, stride=%d, format=%x", __FUNCTION__, lcdev->previewWidth, lcdev->previewHeight, stride, format);
-#endif
     if (lcdev->window == NULL) {
         return;
     }
@@ -259,6 +259,11 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
         return;
     }
 
+#ifdef LOG_EACH_FRAME
+    LOGV("%s: frame=%p, size=%d, camera=%p", __FUNCTION__, frame, size, lcdev);
+    LOGV("%s: width=%d, height=%d, stride=%d, format=%x", __FUNCTION__, lcdev->previewWidth, lcdev->previewHeight, stride, format);
+#endif
+
     ret = lcdev->window->lock_buffer(lcdev->window, bufHandle);
     if (ret != NO_ERROR) {
         LOGE("%s: ERROR locking the buffer", __FUNCTION__);
@@ -270,7 +275,7 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
     void *vaddr;
     do {
         ret = lcdev->gralloc->lock(lcdev->gralloc, *bufHandle,
-                GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_HW_TEXTURE | GRALLOC_USAGE_HW_RENDER,
+                GRALLOC_USAGE_SW_WRITE_OFTEN,
                 0, 0, lcdev->previewWidth, lcdev->previewHeight, &vaddr);
         tries--;
         if (ret) {
@@ -282,7 +287,7 @@ static void processPreviewData(char *frame, size_t size, legacy_camera_device *l
     if (ret) {
         LOGE("%s: could not lock gralloc buffer", __FUNCTION__);
     } else {
-        // The data we get is in YUV... but Window is RGB565. It needs to be converted
+        // The data we get is in YUV... but Window is YV12. It needs to be converted
         switch (format) {
             case Overlay::FORMAT_YUV422I:
                 Yuv422iToYV12((unsigned char*)vaddr, (unsigned char*)frame, lcdev->previewWidth, lcdev->previewHeight, stride);
@@ -318,6 +323,15 @@ static void flashRedLed(bool enable) {
     int fd = ::open("/sys/class/leds/red/brightness", O_WRONLY);
     if (fd >= 0) {
         const char *value = enable ? "255" : "0";
+        write(fd, value, strlen(value));
+        close(fd);
+    }
+}
+
+static void boostInteractiveGovernor(bool enable) {
+    int fd = ::open("/sys/devices/system/cpu/cpufreq/interactive/boost", O_WRONLY);
+    if (fd >= 0) {
+        const char *value = enable ? "1" : "0";
         write(fd, value, strlen(value));
         close(fd);
     }
@@ -508,7 +522,7 @@ static int camera_set_preview_window(struct camera_device * device, struct previ
 
     LOGV("%s: min bufs:%i", __FUNCTION__, min_bufs);
 
-    int kBufferCount = min_bufs + 2;
+    int kBufferCount = min_bufs + 1;
     LOGV("%s: setting buffer count to %i", __FUNCTION__, kBufferCount);
     if (window->set_buffer_count(window, kBufferCount)) {
         LOGE("%s: could not set buffer count", __FUNCTION__);
@@ -613,6 +627,7 @@ static int camera_start_recording(struct camera_device * device) {
     mNumVideoFramesDropped = 0;
     mPreviousVideoFrameDropped = false;
     mThrottlePreview = false;
+    boostInteractiveGovernor(true);
     LOGV("%s:", __FUNCTION__);
     lcdev->hwif->startRecording();
     return NO_ERROR;
@@ -623,6 +638,7 @@ static void camera_stop_recording(struct camera_device * device) {
     LOGI("%s: Number of frames dropped by CameraHAL: %d", __FUNCTION__, mNumVideoFramesDropped);
     mThrottlePreview = false;
     flashRedLed(false);
+    boostInteractiveGovernor(false);
     lcdev->hwif->stopRecording();
 }
 
